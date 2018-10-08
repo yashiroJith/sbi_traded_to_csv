@@ -101,18 +101,8 @@ Public Class Form1
             Dim ret = New history_t
             ret = copyHistory(t)
             Select Case True
-                Case 0 <= t.type_trade.IndexOf("信用新規買")
-                    ret.tax = ""
-                    ret.cost = ""
-                    ret.money_enter = ret.c_money * -1
-                    ret.money_exit = ""
-                    ret.money_SONEKI = ""
-                Case 0 <= t.type_trade.IndexOf("信用新規売")
-                    ret.tax = ""
-                    ret.cost = ""
-                    ret.money_enter = ret.c_money
-                    ret.money_exit = ""
-                    ret.money_SONEKI = ""
+                Case 0 <= t.type_trade.IndexOf("信用新規")
+                    SHINYO_entry(ret)
                 Case 0 <= t.type_trade.IndexOf("現渡") '信用分を取り消す
                     ret.money_enter = ret.c_money
                     ret.money_exit = ""
@@ -167,26 +157,13 @@ Public Class Form1
                         End If
                     Next
                 Case 0 <= t.type_trade.IndexOf("信用返済売")
-                    ret.money_enter = ""
-                    ret.money_exit = ret.c_money
-                    ret.money_SONEKI = ret.money
-                    Dim entres = SHINYO_buy_entry(t, retList).Where(Function(s) s.c_money = ret.c_money - ret.money_SONEKI - ret.c_cost).ToList
-                    For Each e In entres '処理済みリスト
-                        Dim IsExited = e.remainVolume < t.volume
-                        If IsExited Then Continue For '残出来高が小さければ次へ
-                        e.exited_volume += t.volume
-                    Next
+                    Dim entres = SHINYO_buy_entry(t, retList).Where(Function(s) ret.money_SONEKI = ret.c_money - s.c_money - ret.c_cost).ToList
+                    matching_SHINYO_entry_exit(entres, ret, t)
                 Case 0 <= t.type_trade.IndexOf("信用返済買")
-                    ret.money_enter = ""
-                    ret.money_exit = ret.c_money * -1
-                    ret.money_SONEKI = ret.money
-                    Dim sells = SHINYO_sell_entry(t, retList)
-                    Dim entres = sells.Where(Function(s) -1 * s.c_money = -1 * ret.c_money - ret.money_SONEKI - ret.c_cost).ToList
-                    For Each e In entres '処理済みリスト
-                        Dim IsExited = e.remainVolume < t.volume
-                        If IsExited Then Continue For '残出来高が小さければ次へ
-                        e.exited_volume += t.volume
-                    Next
+                    'Dim sells = SHINYO_sell_entry(t, retList)
+                    'Dim entres = sells.Where(Function(s) s.c_money = ret.c_money - ret.money_SONEKI).ToList
+                    Dim entres = SHINYO_buy_entry(t, retList).Where(Function(s) ret.money_SONEKI = ret.c_money - s.c_money - ret.c_cost).ToList
+                    matching_SHINYO_entry_exit(entres, ret, t)
                 Case 0 <= t.type_trade.IndexOf("配当金")
                     ret.money_enter = ""
                     ret.money_exit = ""
@@ -197,6 +174,27 @@ Public Class Form1
         Next
         Return retList
     End Function
+    Private Sub SHINYO_entry(ByRef ret As history_t)
+        ret.money_enter = ret.c_money - ret.c_cost
+        ret.money = ret.c_money
+        ret.money_exit = ""
+        ret.money_SONEKI = ""
+        ret.cost_enter = ret.c_cost
+        ret.date_enter = ret.UKEWATASHIBI
+    End Sub
+    Private Sub matching_SHINYO_entry_exit(ByRef entres As List(Of history_t), ByRef ret As history_t, ByRef t As history_t)
+        For Each e In entres '処理済みリスト
+            Dim IsExited = e.remainVolume < t.volume
+            If IsExited Then Continue For '残出来高が小さければ次へ
+            e.exited_volume += t.volume
+            If ret.date_enter <> "" Then Continue For
+            ret.date_enter = e.date_enter
+        Next
+        ret.cost_exit = t.c_cost - ret.cost_enter
+        ret.money_enter = ret.money_enter
+        ret.money_exit = ret.c_money - ret.c_cost
+        ret.money_SONEKI = ret.money
+    End Sub
     Private Sub averagePricing(ByRef ret As history_t, entres As List(Of history_t))
         'Dim aveMoney As Double = 0
         Dim remainMoney As Double = 0

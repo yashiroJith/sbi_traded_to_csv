@@ -18,6 +18,10 @@ Public Class history_t
     Public Property money_exit As String
     Public Property money_SONEKI As String
     Public Property exited_volume As Integer
+    Public Property date_enter As String
+    Public Property date_exit As String
+    Public Property cost_enter As String
+    Public Property cost_exit As String
     Public Function orderBytype() As Integer
         Select Case True
             Case type_trade = "êMópêVãKîÉ"
@@ -62,6 +66,8 @@ Public Class history_t
         Return price * volume
     End Function
     Public Function c_cost() As Integer
+        'If cost = "" OrElse cost = "--" Then cost = 0
+        'If tax = "" OrElse tax = "--" Then tax = 0
         Return CInt(cost) + CInt(tax)
     End Function
 End Class
