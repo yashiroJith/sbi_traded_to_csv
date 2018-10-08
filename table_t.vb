@@ -14,14 +14,18 @@ Public Class history_t
     Public Property tax As String
     Public Property UKEWATASHIBI As String
     Public Property money As String
-    Public Property money_enter As String
-    Public Property money_exit As String
-    Public Property money_SONEKI As String
+    Public Property money_enter As Integer
+    Public Property money_enter_cost As Integer
+    Public Property money_exit As Integer
+    Public Property money_exit_cost As Integer
+    Public Property money_SONEKI As Integer
     Public Property exited_volume As Integer
     Public Property date_enter As String
-    Public Property date_exit As String
-    Public Property cost_enter As String
-    Public Property cost_exit As String
+    Public Property cost_enter As String = "0"
+    Public Property cost_remain As Integer
+    Public Property cost_exit As String = "0"
+    Public Property cost_enter_back As Integer
+    Public Property cost_enter_tax As Integer
     Public Function orderBytype() As Integer
         Select Case True
             Case type_trade = "信用新規買"
@@ -44,6 +48,9 @@ Public Class history_t
                 Return 100
         End Select
     End Function
+    'Public Function cost_unit() As Integer
+    '    Return Math.Floor(c_cost() / volume)
+    'End Function
     Public Function remainVolume() As Integer
         Return volume - exited_volume
     End Function '処理待ちの残り株数
@@ -66,8 +73,8 @@ Public Class history_t
         Return price * volume
     End Function
     Public Function c_cost() As Integer
-        'If cost = "" OrElse cost = "--" Then cost = 0
-        'If tax = "" OrElse tax = "--" Then tax = 0
+        If cost = "" Then cost = 0
+        If tax = "" Then tax = 0
         Return CInt(cost) + CInt(tax)
     End Function
 End Class
