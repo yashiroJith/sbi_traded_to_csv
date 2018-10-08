@@ -7,13 +7,13 @@ Public Class history_t
     Public Property limit_margin As String
     Public Property AZUKARI As String
     Public Property KAZEI As String
-    Public Property volume As String
+    Public Property price_source As String
     Public Property price As String
+    Public Property volume As String
     Public Property cost As String
     Public Property tax As String
     Public Property UKEWATASHIBI As String
     Public Property money As String
-    Public Property volumeCount As Integer
     Public Property money_enter As String
     Public Property money_exit As String
     Public Property money_SONEKI As String
@@ -28,7 +28,7 @@ Public Class history_t
                 Return 2
             Case type_trade = "現渡"
                 Return 3
-            Case type_trade = "株式現物買"
+            Case 0 <= type_trade.IndexOf("株式現物買")
                 Return 4
             Case type_trade = "信用返済売"
                 Return 5
@@ -40,14 +40,20 @@ Public Class history_t
                 Return 100
         End Select
     End Function
+    Public Function remainVolume() As Integer
+        Return volume - exited_volume
+    End Function '処理待ちの残り株数
     Public Function Is_entry() As Boolean
         Return If(orderBytype() <= 4, True, False)
     End Function
     Public Function IsMeaginSellEntry() As Boolean
-        Return If(orderBytype() = 1, True, False) '信用売エントリー
+        Return If(orderBytype() = 1, True, False) '信用新規売
     End Function
     Public Function IsMeaginBuyEntry() As Boolean
-        Return If(orderBytype() = 0, True, False) '信用買エントリー
+        Return If(orderBytype() = 0, True, False) '信用新規買
+    End Function
+    Public Function IsMeaginSellExit() As Boolean
+        Return If(orderBytype() = 5, True, False) '信用返済売り
     End Function
     Public Function IsGenbutsuEntry() As Boolean
         Return If(orderBytype() = 4 OrElse orderBytype() = 2, True, False) '現物買,現引
