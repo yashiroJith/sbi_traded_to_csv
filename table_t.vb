@@ -48,9 +48,6 @@ Public Class history_t
                 Return 100
         End Select
     End Function
-    'Public Function cost_unit() As Integer
-    '    Return Math.Floor(c_cost() / volume)
-    'End Function
     Public Function remainVolume() As Integer
         Return volume - exited_volume
     End Function 'ˆ—‘Ò‚¿‚Ìc‚èŠ””
@@ -73,8 +70,8 @@ Public Class history_t
         Return price * volume
     End Function
     Public Function c_cost() As Integer
-        If cost = "" Then cost = 0
-        If tax = "" Then tax = 0
+        If cost = "" OrElse cost = "--" Then cost = 0
+        If tax = "" OrElse tax = "--" Then tax = 0
         Return CInt(cost) + CInt(tax)
     End Function
 End Class
@@ -96,6 +93,20 @@ Public Class output_trade_t
     Public Property ŒˆÏè”—¿ As String
     Public Property ŒˆÏÁ”ïÅ As String
     Public Property ‘¹‰vŠz As String
+End Class
+Public Class SONEKI_MEISAI_t
+    Public Property code As String
+    Public Property name As String
+    Public Property TORIKESHI As String
+    Public Property exit_date As String
+    Public Property volume As String
+    Public Property trade_type As String
+    Public Property UKEWATASHIBI As String
+    Public Property exit_money As String
+    Public Property exit_cost As String
+    Public Property enter_date As String
+    Public Property enter_money As String
+    Public Property SONEKI As String
 End Class
 Public Class header_t
     Public SYOUHIN_SHITEI As String
