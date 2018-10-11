@@ -73,7 +73,7 @@ Public Class Form1
     Private Function swap_soneki(exits As List(Of history_t)) As List(Of SONEKI_MEISAI_t)
         Dim trades = New List(Of SONEKI_MEISAI_t)
         For Each ex In exits
-            If 0 <= ex.TORIHIKI.IndexOf("現物売") Then
+            If (0 <= ex.TORIHIKI.IndexOf("現物売")) Then
                 Dim trade = New SONEKI_MEISAI_t
                 trade.銘柄コード = ex.code
                 trade.銘柄 = ex.name
@@ -133,8 +133,8 @@ Public Class Form1
                     '現物から取得分 ->　コスト入り取得金額 - 損益
 
                 Case 0 <= ret.TORIHIKI.IndexOf("株式現物買") OrElse 0 <= ret.TORIHIKI.IndexOf("分売買")
-                    averagePricing(ret, GENBUTSU_entry(ret, retList))
 
+                    averagePricing(ret, GENBUTSU_entry(ret, retList))
                 Case 0 <= ret.TORIHIKI.IndexOf("現引") '信用分を取り消す
                     Dim entres = SHINYO_buy_entry(t, retList).Where(Function(s) s.TANKA_ct = ret.TANKA_ct).ToList '過去の信用新規買リスト
                     For Each e In entres '該当信用新規買の処理
@@ -148,30 +148,37 @@ Public Class Form1
                     averagePricing(ret, GENBUTSU_entry(ret, retList))
                 Case 0 <= ret.TORIHIKI.IndexOf("株式現物売")  '以前の現引きか現物買いから損益を計算
                     If ret.KAZEI = "非課税" Then Continue For 'NISAは無視
-                    Dim entres = GENBUTSU_entry(ret, retList)
-                    For Each e In entres '仕掛けリスト
-#Region "手仕舞い条件"
-                        Dim has_exit_volume = e.exted_vol < ret.volume '手仕舞い残りがある
-                        Dim has_entry_volume = 0 < e.remainVolume '仕掛け残りがある
-                        Dim exit_moreThen_entry = e.remainVolume <= ret.volume '手仕舞いが仕掛け残りより多い
-                        Dim entry_moreThen_exit = ret.volume <= e.remainVolume '仕掛け残り枚数が手仕舞い以上
-#End Region
-                        e.exted_vol += ret.volume '仕掛け側 exted_vol -> 手仕舞い数量で埋める 
+                    Dim entres = GENBUTSU_entry(ret, retList).Where(Function(e) e.exted_vol <> e.volume).ToList
+                    'entresは複数だと買い増しした現物、もしくは単独。
+                    If ret.code = "6548" Then
+                        Dim a = 0
+
+                    End If
+                    If entres.Count = 1 Then '現物が単独の場合
+                        Dim e = entres(0)
+                        Dim min_vol = Math.Min(e.volume, ret.volume) '小さい株数が処理済み
+                        ret.exted_vol += min_vol '小さい株数が処理済み
+                        e.exted_vol += min_vol  '小さい株数が処理済み
+                        ret.enter_m_ct = e.TANKA_ct * ret.volume '税金上の取得金額
+                        ret.SONEKI = CInt(ret.money_sr) - ret.enter_m_ct
                         ret.exit_m_ct = ret.money_sr '表示用コスト込金額に代入
                         ret.exit_ct = ret.c_cost '
-                        ret.enter_m_ct = e.enter_m_ct '手仕舞い側仕掛け金額
-                        ret.SONEKI = ret.money_sr - e.enter_m_ct '損益計算
                         ret.enter_dt = e.UKEWATASHIBI
+                    ElseIf 1 < entres.Count Then '現物が複数
+                        For Each e In entres
+                            Dim min_vol = Math.Min(e.remainVolume, ret.remainVolume) '小さい株数が処理済み
+                            ret.exted_vol += min_vol
+                            e.exted_vol += min_vol
+                            ret.enter_m_ct = e.TANKA_ct * ret.volume '税金上の取得金額
+                            e.enter_m_ct = e.TANKA_ct * min_vol
+                            ret.SONEKI = CInt(ret.money_sr) - ret.enter_m_ct '損益計算
+                            ret.exit_m_ct = ret.money_sr '表示用コスト込金額に代入
+                            ret.exit_ct = ret.c_cost '
+                            ret.enter_dt = e.UKEWATASHIBI
 
-                        'If exit_moreThen_entry AndAlso has_entry_volume AndAlso has_exit_volume Then '手仕舞いが仕掛けより多い
-                        '    If entry_moreThen_exit Then '仕掛け残り枚数が手仕舞い以上 一回で処理が終了する時 もしくは複数回の最後
-                        '        ret.SONEKI += ret.exit_m_ct - ret.c_cost - (e.TANKA_ct * ret.volume)
-                        '        ret.enter_dt = e.UKEWATASHIBI
-                        '        Exit For
-                        '    End If
-                        '    e.exted_vol += ret.volume
-                        'End If
-                    Next
+                            If ret.exted_vol = ret.volume Then Exit For '手仕舞い株式の処理が終わり
+                        Next
+                    End If
                 Case 0 <= ret.TORIHIKI.IndexOf("信用返済売")
                     ret.SONEKI = ret.money_sr
                     Dim entres = SHINYO_buy_entry(ret, retList).ToList
@@ -192,31 +199,22 @@ Public Class Form1
     End Function
     Private Sub averagePricing(ByRef ret As history_t, entres As List(Of history_t))
         '未手仕舞いの同銘柄現物があれば取得金額、株価の平均を取る
-        Dim Moneys As Double = 0
-        Dim Volumes As Integer = 0
-        For Each e In entres
-            If 0 < e.remainVolume Then '処理待ちの株があれば購入金額を集計
+        Dim add_entres = entres.Where(Function(e) 0 < e.remainVolume)
+        If 0 = add_entres.Count Then '現物買いが新規買い
+            ret.TANKA_ct = Math.Ceiling(ret.money_sr / ret.volume) '単価(ｺｽﾄ込)= 受渡金額(ｺｽﾄ込金額)/数量
+            ret.enter_m_ct = ret.TANKA_ct * ret.volume '取得金額 ok
+        ElseIf 0 < add_entres.Count Then '既存株がある
+            Dim Moneys As Double = ret.money_sr
+            Dim Volumes As Integer = ret.volume
+            For Each e In add_entres
                 Moneys += e.money_sr  '購入済み金額（コスト入り）
                 Volumes += e.volume '購入済み株数
-            End If
-        Next
-        '新規買いか？追加買いなら平均法
-        If Volumes = 0 Then '新規買い
-            ret.TANKA_ct = Math.Ceiling(ret.money_sr / ret.volume) '単価(ｺｽﾄ込)= 受渡金額(ｺｽﾄ込金額)/数量
-            ret.enter_m_ct = ret.TANKA_ct * ret.volume
-        Else '追加買い
-            Moneys += ret.money_sr '新たなｺｽﾄ込金額の追加
-            Volumes += ret.volume '新たな数量の追加
-            ret.TANKA_ct = Math.Ceiling(Moneys / Volumes) '単価(ｺｽﾄ込)= 受渡金額(ｺｽﾄ込金額)/数量
-            ret.enter_m_ct = ret.TANKA_ct * ret.volume '追加買い -> コスト込み金額
+            Next
+            ret.TANKA_ct = Math.Ceiling(Moneys / Volumes) '税金上の取得単価 -> 取得金額は 売却側で計算
+            For Each e In add_entres
+                e.TANKA_ct = ret.TANKA_ct '既存株の税金上の取得単価 -> 取得金額は 売却側で計算
+            Next
         End If
-        For Each e In entres
-            If 0 < e.remainVolume Then '追加された株があれば購入株価と金額を編集
-                e.TANKA_ct = ret.TANKA_ct
-                e.enter_m_ct = e.TANKA_ct * e.volume
-                e.exted_vol += ret.volume
-            End If
-        Next
     End Sub '口座を調べてすでに同じ銘柄の現物があれば平均を取る。小数点は切り上げ。
     Private Sub matching_SHINYO_entry_exit(ByRef entres As List(Of history_t), ByRef ret As history_t)
         Dim vector = If(0 <= ret.TORIHIKI.IndexOf("信用返済買"), 1, -1)
