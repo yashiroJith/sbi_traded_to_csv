@@ -1,5 +1,5 @@
 Public Class history_t
-    Public Property YAKUJYOU_dt As String '–ñ’è“ú
+    Public Property dt_YAKUJYOU As String '–ñ’è“ú
     Public Property name As String '–Á•¿
     Public Property code As String '–Á•¿ƒR[ƒh
     Public Property market As String
@@ -15,15 +15,15 @@ Public Class history_t
     Public Property money_sr As String 'Žó“n‹àŠz->M—p:‘¹‰v | Œ»•¨:º½Äž‹àŠz
     '‚±‚±‚©‚ç‰ÁH’l
     Public Property TANKA_ct As Integer = 0 'Œ»•¨‚ÌÅ‰‚ÌŒvŽZ’P‰¿->‰Â•Ï’P‰¿
-    Public Property ent_money As Integer = 0
-    Public Property enter_m_ct As Integer = 0
-    Public Property ext_money As Integer = 0
-    Public Property exit_m_ct As Integer = 0
+    Public Property money_enter As Integer = 0
+    Public Property money_enter_ct As Integer = 0
+    Public Property money_exit As Integer = 0
+    Public Property money_exit_ct As Integer = 0
     Public Property SONEKI As Integer = 0
     Public Property exted_vol As Integer = 0
-    Public Property enter_dt As String = ""
-    Public Property enter_ct As Integer = 0
-    Public Property exit_ct As Integer = 0
+    Public Property dt_enter As String = ""
+    Public Property cost_enter As Integer = 0
+    Public Property cost_exit As Integer = 0
     Public Function orderBytype() As Integer
         Select Case True
             Case 0 <= TORIHIKI.IndexOf("M—pV‹K”ƒ")
@@ -76,36 +76,35 @@ Public Class history_t
     End Function
 End Class
 
-Public Class output_trade_t
-    Public Property Žæ“¾“ú As String
+Public Class patch_t
+    Public Property –ñ’è“ú As String
+    Public Property –Á•¿ As String
     Public Property –Á•¿ƒR[ƒh As String
-    Public Property –Á•¿–¼ As String
-    Public Property Žæ“¾Š”‰¿ As String
-    Public Property Žæ“¾”—Ê As String
-    Public Property Žæ“¾‹àŠz As String
-    Public Property Žæ“¾Žè”—¿ As String
-    Public Property Žæ“¾Á”ïÅ As String
-    Public Property Žæˆø“K—p As String
-    Public Property ŒˆÏ“ú As String
-    Public Property ŒˆÏŠ”‰¿ As String
-    Public Property ŒˆÏ”—Ê As String
-    Public Property ŒˆÏ‹àŠz As String
-    Public Property ŒˆÏŽè”—¿ As String
-    Public Property ŒˆÏÁ”ïÅ As String
-    Public Property ‘¹‰vŠz As String
+    Public Property Žsê As String
+    Public Property Žæˆø As String
+    Public Property ŠúŒÀ As String
+    Public Property —a‚è As String
+    Public Property ‰ÛÅ As String
+    Public Property –ñ’è”—Ê As String
+    Public Property –ñ’è’P‰¿ As String
+    Public Property Žè”—¿ As String
+    Public Property ÅŠz As String
+    Public Property Žó“n“ú As String
+    Public Property Žó“n‹àŠz As String
+    Public Property ˆ—Ï”—Ê As String
 End Class
 Public Class SONEKI_MEISAI_t
     Public Property –Á•¿ƒR[ƒh As String
     Public Property –Á•¿ As String
     Public Property ÷“n‰vŽæÁ As String
-    Public Property exit_dt As String
+    Public Property –ñ’è“ú As String
     Public Property ”—Ê As String
     Public Property Žæˆø As String
     Public Property Žó“n“ú As String
-    Public Property ”„‹porŒˆÏm As String
-    Public Property exit_ct As String
-    Public Property enter_dt As String
-    Public Property Žæ“¾orV‹Km As String
+    Public Property ”„‹plŒˆÏ‹àŠz As String
+    Public Property ”ï—p As String
+    Public Property Žæ“¾lV‹K”NŒŽ“ú As String
+    Public Property Žæ“¾lV‹K‹àŠz As String
     Public Property ‘¹‰v‹àŠz As String
 End Class
 Public Class header_t
@@ -115,4 +114,4 @@ Public Class header_t
     Public MEISAI_SUU As String
     Public MEISAI_KAISSHI As String
     Public MEISAI_SYURYOU As String
-End Class
+End Class'SBI–¾×‚ÌŒ©•ª‚¯—p

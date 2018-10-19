@@ -15,7 +15,7 @@ Public Class Form1
     Private Sub init()
         Dim init_form = Sub()
                             Me.Size = New Size(400, 300)
-                            Text = "SBI約定履歴パーサー"
+                            Text = "SBI一般口座支援ツール"
                             Me.FormBorderStyle = FormBorderStyle.Sizable
                             Me.MinimumSize = New Size(400, 300)
                         End Sub
@@ -55,63 +55,98 @@ Public Class Form1
         If Not IsTextBox Then Exit Sub 'オブジェクトがテキストボックス以外なら終了
         textLog.AppendText(fileName(0) & vbCrLf & vbCrLf) 'ソース名を表示
         Dim header = map_header(fileName(0)) 'SBI取引履歴の情報抽出
-        Dim historyList = map_history(fileName(0))
-        Dim query = orderByDate(historyList)
-        Dim soneki = Calc_SONEKI(query) '日付順に出力
-        Dim form_soneki = swap_soneki(soneki)
-        '分割で自動出力できなかったものを出力
-        Dim cant_trades_SHINYO = soneki.Where(Function(r) (0 <= r.TORIHIKI.IndexOf("信用返済") AndAlso r.enter_m_ct = 0) OrElse (0 <= r.TORIHIKI.IndexOf("信用新規") AndAlso r.exted_vol = 0)).ToList
-        'Dim cant_trades_SHINYO = soneki.Where(Function(r) 0 <= r.type_trade.IndexOf("信用新規") AndAlso r.exited_volume = 0).ToList
-        Dim form_cant_shinyo = swap_soneki(cant_trades_SHINYO)
+        Dim history = map_history(fileName(0), 10) '10行目から
+        Dim patch_record = map_history(Path.Combine(CurrentDirectory, "patch.csv"), 2) '2行目から
 
-        writeCsv(Path.Combine(CurrentDirectory, "Debug.csv"), soneki)
-        'writeCsv(Path.Combine(CurrentDirectory, "Trading_codeSort.csv"), form_soneki)
-        writeCsv(Path.Combine(CurrentDirectory, "Trading_1.csv"), form_soneki)
-        writeCsv(Path.Combine(CurrentDirectory, "cant_find_shinyo.csv"), form_cant_shinyo)
+        do_patch(history, patch_record) 'パッチデータを適用
+        Dim all_history = calculate(orderByDate(history)) '日付順に出力
+
+        '分割で自動出力できなかったものを出力
+        Dim pre_illegal = all_history.Where(Function(r) (0 <= r.TORIHIKI.IndexOf("信用返済") AndAlso r.money_enter_ct = 0) OrElse (0 <= r.TORIHIKI.IndexOf("現物売") AndAlso 0 < r.remainVolume))
+        Dim illegal = all_history.Where(Function(r) pre_illegal.Any(Function(i) i.code = r.code AndAlso r.exted_vol = 0)).ToList
+
+        writeCsv(Path.Combine(CurrentDirectory, "Debug.csv"), swap_history_to_patch(orderByCode(all_history)))
+        writeCsv(Path.Combine(CurrentDirectory, "Result.csv"), swap_history_to_MEISAI(all_history))
+        writeCsv(Path.Combine(CurrentDirectory, "Illegal.csv"), swap_history_to_patch(illegal))
+
 
     End Sub 'ファイルをドラッグ＆ドロップする処理
-    Private Function swap_soneki(exits As List(Of history_t)) As List(Of SONEKI_MEISAI_t)
+    Private Sub do_patch(ByRef s As List(Of history_t), _patch As List(Of history_t))
+        For i As Integer = s.Count = 1 To 0 Step -1
+            For Each p In _patch
+                If s(i).code = p.code AndAlso CDate(s(i).dt_YAKUJYOU) = CDate(p.dt_YAKUJYOU) AndAlso s(i).TORIHIKI = p.TORIHIKI AndAlso s(i).cost_sr = p.cost_sr Then
+                    s.RemoveAt(i)
+                End If
+            Next
+        Next
+        For Each p In _patch
+            s.Add(p)
+        Next
+    End Sub
+
+    Private Function swap_history_to_MEISAI(exits As List(Of history_t)) As List(Of SONEKI_MEISAI_t)
         Dim trades = New List(Of SONEKI_MEISAI_t)
-        For Each ex In exits
-            If (0 <= ex.TORIHIKI.IndexOf("現物売")) Then
+        For Each e In exits
+            If (0 <= e.TORIHIKI.IndexOf("現物売")) OrElse (0 <= e.TORIHIKI.IndexOf("信用返済")) OrElse 0 <= e.TORIHIKI.IndexOf("配当金") Then
                 Dim trade = New SONEKI_MEISAI_t
-                trade.銘柄コード = ex.code
-                trade.銘柄 = ex.name
+                trade.銘柄コード = e.code
+                trade.銘柄 = e.name
                 trade.譲渡益取消 = ""
-                trade.exit_dt = ex.YAKUJYOU_dt
-                trade.数量 = ex.volume
-                trade.取引 = ex.TORIHIKI
-                trade.受渡日 = ex.UKEWATASHIBI
-                trade.売却or決済m = ex.exit_m_ct
-                trade.exit_ct = ex.exit_ct
-                trade.enter_dt = ex.enter_dt
-                trade.取得or新規m = ex.enter_m_ct
-                trade.損益金額 = ex.SONEKI
+                trade.約定日 = e.dt_YAKUJYOU
+                trade.数量 = e.volume
+                trade.取引 = e.TORIHIKI
+                trade.受渡日 = e.UKEWATASHIBI
+                trade.売却l決済金額 = e.money_exit_ct
+                trade.費用 = e.cost_exit
+                trade.取得l新規年月日 = e.dt_enter
+                trade.取得l新規金額 = e.money_enter_ct
+                trade.損益金額 = e.SONEKI
                 trades.Add(trade)
             End If
         Next
         Return trades
     End Function
+    Private Function swap_history_to_patch(exits As List(Of history_t)) As List(Of patch_t)
+        Dim patchs = New List(Of patch_t)
+        For Each e In exits
+            Dim patch = New patch_t
+            patch.約定日 = e.dt_YAKUJYOU
+            patch.銘柄 = e.name
+            patch.銘柄コード = e.code
+            patch.市場 = e.market
+            patch.取引 = e.TORIHIKI
+            patch.期限 = e.KIGEN
+            patch.預り = e.AZUKARI
+            patch.課税 = e.KAZEI
+            patch.約定数量 = e.volume
+            patch.約定単価 = e.TANKA_sr
+            patch.手数料 = e.cost_sr
+            patch.税額 = e.tax_sr
+            patch.受渡日 = e.UKEWATASHIBI
+            patch.受渡金額 = e.money_sr
+            patch.処理済数量 = e.exted_vol
+            patchs.Add(patch)
+        Next
+        Return patchs
+    End Function
 
-    Private Function Calc_SONEKI(_source As List(Of history_t)) As List(Of history_t)
+    Private Function calculate(_source As List(Of history_t)) As List(Of history_t)
         Dim retList = New List(Of history_t)
-
         For Each t In _source
             Dim ret = New history_t
             ret = copyHistory(t)
             Select Case True
                 Case 0 <= ret.TORIHIKI.IndexOf("信用新規") '信用新規 -> 仕掛け金額 -> 仕掛け分コスト計算
-                    ret.ent_money = ret.c_money_shinyo '仕掛け金額
-                    ret.enter_ct = ret.c_cost '仕掛けコスト
-                    ret.enter_dt = ret.UKEWATASHIBI
+                    ret.money_enter = ret.c_money_shinyo '仕掛け金額
+                    ret.cost_enter = ret.c_cost '仕掛けコスト
+                    ret.dt_enter = ret.UKEWATASHIBI
                     If ret.IsMeaginBuyEntry Then
-                        ret.enter_m_ct = ret.c_money_shinyo + ret.c_cost 'コスト入り新規買い金額
+                        ret.money_enter_ct = ret.c_money_shinyo + ret.c_cost 'コスト入り新規買い金額
                     Else
-                        ret.enter_m_ct = ret.c_money_shinyo - ret.c_cost 'コスト入り新規売り金額
+                        ret.money_enter_ct = ret.c_money_shinyo - ret.c_cost 'コスト入り新規売り金額
                     End If
                 Case 0 <= ret.TORIHIKI.IndexOf("現渡") '信用売りを現物から取り消す
-                    Dim ShinyoSell = SHINYO_sell_entry(ret, retList).Where(Function(e) e.TANKA_sr = ret.TANKA_sr).ToList '単価だけ
-                    'Dim s_Gyoku = New history_t '元になる信用売り玉
+                    Dim ShinyoSell = SHINYO_sell_entry(ret, retList).Where(Function(e) e.TANKA_sr = ret.TANKA_sr).ToList '同単価
                     For Each s In ShinyoSell '信用売りリスト
                         If s.remainVolume < ret.volume Then Continue For '残出来高が小さければ次へ
                         s.exted_vol += ret.volume '信用売側を処理済み
@@ -125,60 +160,72 @@ Public Class Form1
                         Genbutu = e
                         Exit For '現渡しのルールから１度当たれば終了
                     Next
-                    ret.enter_dt = Genbutu.UKEWATASHIBI
-                    ret.enter_m_ct = Genbutu.enter_m_ct
-                    ret.exit_m_ct = ret.c_money_shinyo - ret.c_cost '売却・決済金額
-                    ret.exit_ct = ret.c_cost '売却費用
-                    ret.SONEKI = ret.exit_m_ct - ret.enter_m_ct
+                    ret.dt_enter = Genbutu.UKEWATASHIBI
+                    ret.money_enter_ct = Genbutu.money_enter_ct
+                    ret.money_exit_ct = ret.c_money_shinyo - ret.c_cost '売却・決済金額
+                    ret.cost_exit = ret.c_cost '売却費用
+                    ret.SONEKI = ret.money_exit_ct - ret.money_enter_ct
                     '現物から取得分 ->　コスト入り取得金額 - 損益
-
                 Case 0 <= ret.TORIHIKI.IndexOf("株式現物買") OrElse 0 <= ret.TORIHIKI.IndexOf("分売買")
-
                     averagePricing(ret, GENBUTSU_entry(ret, retList))
                 Case 0 <= ret.TORIHIKI.IndexOf("現引") '信用分を取り消す
                     Dim entres = SHINYO_buy_entry(t, retList).Where(Function(s) s.TANKA_ct = ret.TANKA_ct).ToList '過去の信用新規買リスト
-                    For Each e In entres '該当信用新規買の処理
-                        If e.remainVolume < t.volume Then Continue For '残出来高が小さければ次へ
-                        ret.enter_dt = e.UKEWATASHIBI '現引 -> 受渡日
-                        e.exted_vol += t.volume '信用 -> exted_vol
-                        Exit For
-                    Next
+                    Select Case True
+                        Case entres.Count = 0
+                            Continue For
+                        Case entres.Count = 1
+                            Dim e = entres(0)
+                            ret.dt_enter = e.UKEWATASHIBI '現引 -> 受渡日
+                            e.exted_vol += t.volume '信用 -> exted_vol
+                        Case 1 < entres.Count
+                            For Each e In entres '複数新規買の処理
+                                If e.remainVolume < ret.volume Then Continue For '残出来高が小さければ次へ
+                                If ret.TANKA_sr = e.TANKA_sr Then
+                                    ret.dt_enter = e.UKEWATASHIBI '現引 -> 受渡日
+                                    e.exted_vol += ret.volume '信用 -> exted_vol
+                                End If
+                            Next
+                    End Select
                     ret.money_sr *= -1
                     'ここから株式現物買と同じ処理
                     averagePricing(ret, GENBUTSU_entry(ret, retList))
                 Case 0 <= ret.TORIHIKI.IndexOf("株式現物売")  '以前の現引きか現物買いから損益を計算
-                    If ret.KAZEI = "非課税" Then Continue For 'NISAは無視
-                    Dim entres = GENBUTSU_entry(ret, retList).Where(Function(e) e.exted_vol <> e.volume).ToList
                     'entresは複数だと買い増しした現物、もしくは単独。
-                    If ret.code = "6548" Then
-                        Dim a = 0
-
-                    End If
-                    If entres.Count = 1 Then '現物が単独の場合
-                        Dim e = entres(0)
-                        Dim min_vol = Math.Min(e.volume, ret.volume) '小さい株数が処理済み
-                        ret.exted_vol += min_vol '小さい株数が処理済み
-                        e.exted_vol += min_vol  '小さい株数が処理済み
-                        ret.enter_m_ct = e.TANKA_ct * ret.volume '税金上の取得金額
-                        ret.SONEKI = CInt(ret.money_sr) - ret.enter_m_ct
-                        ret.exit_m_ct = ret.money_sr '表示用コスト込金額に代入
-                        ret.exit_ct = ret.c_cost '
-                        ret.enter_dt = e.UKEWATASHIBI
-                    ElseIf 1 < entres.Count Then '現物が複数
-                        For Each e In entres
-                            Dim min_vol = Math.Min(e.remainVolume, ret.remainVolume) '小さい株数が処理済み
-                            ret.exted_vol += min_vol
-                            e.exted_vol += min_vol
-                            ret.enter_m_ct = e.TANKA_ct * ret.volume '税金上の取得金額
-                            e.enter_m_ct = e.TANKA_ct * min_vol
-                            ret.SONEKI = CInt(ret.money_sr) - ret.enter_m_ct '損益計算
-                            ret.exit_m_ct = ret.money_sr '表示用コスト込金額に代入
-                            ret.exit_ct = ret.c_cost '
-                            ret.enter_dt = e.UKEWATASHIBI
-
-                            If ret.exted_vol = ret.volume Then Exit For '手仕舞い株式の処理が終わり
-                        Next
-                    End If
+                    Dim entres = GENBUTSU_entry(ret, retList).Where(Function(e) e.exted_vol <> e.volume).ToList
+                    Select Case True
+                        Case ret.KAZEI = "非課税"
+                            Continue For'NISAは無視
+                        Case entres.Count = 0 '仕掛けが０
+                            If 0 <= ret.name.IndexOf("新株予約権") Then
+                                ret.cost_exit = ret.c_cost
+                                ret.dt_enter = ret.dt_YAKUJYOU
+                                ret.money_exit_ct = ret.money_sr
+                                ret.SONEKI = ret.money_sr
+                            End If
+                        Case entres.Count = 1 '仕掛けが単独
+                            Dim e = entres(0)
+                            Dim min_vol = Math.Min(e.volume, ret.volume) '小さい株数が処理済み
+                            ret.exted_vol += min_vol '小さい株数が処理済み
+                            e.exted_vol += min_vol  '小さい株数が処理済み
+                            ret.money_enter_ct = e.TANKA_ct * ret.volume '税金上の取得金額
+                            ret.SONEKI = CInt(ret.money_sr) - ret.money_enter_ct
+                            ret.money_exit_ct = ret.money_sr '表示用コスト込金額に代入
+                            ret.cost_exit = ret.c_cost '
+                            ret.dt_enter = e.UKEWATASHIBI
+                        Case 1 < entres.Count '仕掛けが複数 -> 買い増しされた仕掛け
+                            For Each e In entres
+                                Dim min_vol = Math.Min(e.remainVolume, ret.remainVolume) '小さい株数が処理済み
+                                ret.exted_vol += min_vol
+                                e.exted_vol += min_vol
+                                ret.money_enter_ct = e.TANKA_ct * ret.volume '税金上の取得金額
+                                ret.SONEKI = CInt(ret.money_sr) - ret.money_enter_ct '損益計算
+                                ret.money_exit_ct = ret.money_sr '表示用コスト込金額に代入
+                                ret.cost_exit = ret.c_cost '
+                                ret.dt_enter = e.UKEWATASHIBI
+                                e.money_enter_ct = e.TANKA_ct * min_vol
+                                If ret.exted_vol = ret.volume Then Exit For '手仕舞い株式の処理が終わり
+                            Next
+                    End Select
                 Case 0 <= ret.TORIHIKI.IndexOf("信用返済売")
                     ret.SONEKI = ret.money_sr
                     Dim entres = SHINYO_buy_entry(ret, retList).ToList
@@ -188,8 +235,8 @@ Public Class Form1
                     Dim entres = SHINYO_sell_entry(ret, retList) '売り買い逆
                     matching_SHINYO_entry_exit(entres, ret)
                 Case 0 <= t.TORIHIKI.IndexOf("配当金")
-                    ret.ent_money = 0
-                    ret.ext_money = 0
+                    ret.money_enter = 0
+                    ret.money_exit = 0
                     ret.SONEKI = ret.money_sr
                 Case Else
             End Select
@@ -202,7 +249,7 @@ Public Class Form1
         Dim add_entres = entres.Where(Function(e) 0 < e.remainVolume)
         If 0 = add_entres.Count Then '現物買いが新規買い
             ret.TANKA_ct = Math.Ceiling(ret.money_sr / ret.volume) '単価(ｺｽﾄ込)= 受渡金額(ｺｽﾄ込金額)/数量
-            ret.enter_m_ct = ret.TANKA_ct * ret.volume '取得金額 ok
+            ret.money_enter_ct = ret.TANKA_ct * ret.volume '取得金額 ok
         ElseIf 0 < add_entres.Count Then '既存株がある
             Dim Moneys As Double = ret.money_sr
             Dim Volumes As Integer = ret.volume
@@ -219,45 +266,49 @@ Public Class Form1
     Private Sub matching_SHINYO_entry_exit(ByRef entres As List(Of history_t), ByRef ret As history_t)
         Dim vector = If(0 <= ret.TORIHIKI.IndexOf("信用返済買"), 1, -1)
         For Each e In entres 'エントリー抽出リスト
+            If e.code = "3475" Then
+                Dim a = 0
+            End If
             Dim entry_price = (ret.c_money_shinyo + (ret.c_cost + ret.SONEKI) * vector) / ret.volume '売り買い逆
             If e.remainVolume < ret.volume Then Continue For '手仕舞い株数より仕掛け株数が少ないときだけ進む
             If e.TANKA_sr = entry_price Then 'エントリーからの仕掛け値と手仕舞いから計算した仕掛け値が一致
                 If e.volume = ret.volume Then '仕掛けと返済数が同じ時
-                    ret.enter_m_ct = e.enter_m_ct 'コスト入り新規金額
-                    ret.enter_ct = e.enter_ct '新規コスト
-                    ret.exit_ct = ret.c_cost - e.enter_ct '手仕舞いコスト
-                    ret.exit_m_ct = ret.c_money_shinyo + (ret.ext_money + ret.exit_ct) * vector 'コスト入り手仕舞い金額 -> 売り買い逆
+                    ret.money_enter_ct = e.money_enter_ct 'コスト入り新規金額
+                    ret.cost_enter = e.cost_enter '新規コスト
+                    ret.cost_exit = ret.c_cost - e.cost_enter '手仕舞いコスト
+                    ret.money_exit_ct = ret.c_money_shinyo + (ret.money_exit + ret.cost_exit) * vector 'コスト入り手仕舞い金額 -> 売り買い逆
                 Else '仕掛けが多く分割返済の時
-                    ret.enter_ct = Math.Round(e.c_cost / e.volume * ret.volume, 0, MidpointRounding.AwayFromZero) '新規コスト
-                    ret.exit_ct = ret.c_cost - ret.enter_ct '手仕舞いコスト
-                    ret.enter_m_ct = e.TANKA_sr * ret.volume + ret.enter_ct 'コスト入り新規金額
-                    ret.exit_m_ct = ret.c_money_shinyo + (ret.ext_money + ret.exit_ct) * vector 'コスト入り手仕舞い金額 -> 売り買い逆
+                    ret.cost_enter = Math.Round(e.c_cost / e.volume * ret.volume, 0, MidpointRounding.AwayFromZero) '新規コスト
+                    ret.cost_exit = ret.c_cost - ret.cost_enter '手仕舞いコスト
+                    ret.money_enter_ct = e.TANKA_sr * ret.volume + ret.cost_enter 'コスト入り新規金額
+                    ret.money_exit_ct = ret.c_money_shinyo + (ret.money_exit + ret.cost_exit) * vector 'コスト入り手仕舞い金額 -> 売り買い逆
                 End If
-                ret.enter_dt = e.UKEWATASHIBI
+                ret.dt_enter = e.UKEWATASHIBI
                 e.exted_vol += ret.volume
+                ret.exted_vol += Math.Min(ret.volume, e.volume)
             End If
         Next
     End Sub
     Private Function orderByDate(_historys As List(Of history_t)) As List(Of history_t)
-        Return _historys.OrderBy(Function(t1) CDate(t1.YAKUJYOU_dt)).ThenBy(Function(t1) t1.orderBytype).ToList
+        Return _historys.OrderBy(Function(t1) CDate(t1.dt_YAKUJYOU)).ThenBy(Function(t1) t1.orderBytype).ToList
     End Function '日付順
     Private Function orderByCode(_historys As List(Of history_t)) As List(Of history_t)
-        Return _historys.OrderBy(Function(t0) t0.code).ThenBy(Function(t1) t1.YAKUJYOU_dt).ThenBy(Function(t1) t1.orderBytype).ToList
+        Return _historys.OrderBy(Function(t0) t0.code).ThenBy(Function(t1) t1.dt_YAKUJYOU).ThenBy(Function(t1) t1.orderBytype).ToList
     End Function '視覚的に見やすい順
     Private Function GENBUTSU_entry(_t As history_t, _source As List(Of history_t)) As List(Of history_t)
-        Dim entres = _source.Where(Function(s) (s.code = _t.code OrElse s.code = _t.code & "1") AndAlso s.IsGenbutsuEntry AndAlso Date.Compare(s.YAKUJYOU_dt, _t.YAKUJYOU_dt) <= 0).ToList
+        Dim entres = _source.Where(Function(s) (s.code = _t.code OrElse s.code = _t.code & "1") AndAlso s.IsGenbutsuEntry AndAlso Date.Compare(s.dt_YAKUJYOU, _t.dt_YAKUJYOU) <= 0).ToList
         Return entres
     End Function '現売以前の現物仕掛けを抽出
     Private Function SHINYO_sell_entry(_ret As history_t, _retList As List(Of history_t)) As List(Of history_t)
-        Dim entres = _retList.Where(Function(r) r.code = _ret.code AndAlso r.IsMeaginSellEntry AndAlso Date.Compare(r.YAKUJYOU_dt, _ret.YAKUJYOU_dt) <= 0).ToList
+        Dim entres = _retList.Where(Function(r) r.code = _ret.code AndAlso r.IsMeaginSellEntry AndAlso Date.Compare(r.dt_YAKUJYOU, _ret.dt_YAKUJYOU) <= 0).ToList
         Return entres
     End Function '返済以前の信用新規売を抽出
     Private Function SHINYO_buy_entry(_t As history_t, _source As List(Of history_t)) As List(Of history_t)
-        Dim entres = _source.Where(Function(s) s.code = _t.code AndAlso s.IsMeaginBuyEntry AndAlso Date.Compare(s.YAKUJYOU_dt, _t.YAKUJYOU_dt) <= 0).ToList
+        Dim entres = _source.Where(Function(s) s.code = _t.code AndAlso s.IsMeaginBuyEntry AndAlso Date.Compare(s.dt_YAKUJYOU, _t.dt_YAKUJYOU) <= 0).ToList
         Return entres
     End Function '返済以前の信用新規買を抽出
     Private Function SHINYO_sell_exit(_t As history_t, _source As List(Of history_t)) As List(Of history_t)
-        Dim exits = _source.Where(Function(s) s.code = _t.code AndAlso s.IsMeaginSellExit AndAlso Date.Compare(s.YAKUJYOU_dt, _t.YAKUJYOU_dt) <= 0).ToList
+        Dim exits = _source.Where(Function(s) s.code = _t.code AndAlso s.IsMeaginSellExit AndAlso Date.Compare(s.dt_YAKUJYOU, _t.dt_YAKUJYOU) <= 0).ToList
         Return exits
     End Function
     Private Function copyHistory(_history As history_t) As history_t
@@ -267,7 +318,7 @@ Public Class Form1
         Dim _copy = New history_t
         _copy.AZUKARI = _history.AZUKARI
         _copy.code = _history.code
-        _copy.YAKUJYOU_dt = _history.YAKUJYOU_dt
+        _copy.dt_YAKUJYOU = _history.dt_YAKUJYOU
         _copy.KAZEI = _history.KAZEI
         _copy.KIGEN = _history.KIGEN
         _copy.market = _history.market
@@ -282,8 +333,8 @@ Public Class Form1
         Return _copy
     End Function
 #End Region
-    Private Function map_history(_fname As String) As List(Of history_t)
-        Dim result = read_from_csv(_fname, 10)
+    Private Function map_history(_fname As String, _startLine As Integer) As List(Of history_t)
+        Dim result = read_from_csv(_fname, _startLine)
         Dim csv = result.Split(vbCrLf)
         Dim lines As New List(Of history_t)
         Dim _buffer As String = ""
@@ -291,7 +342,7 @@ Public Class Form1
             _buffer = csv(i).Replace(vbLf, "")
             Dim _index() = _buffer.Split(",")
             If _buffer = "" Then Continue For
-            Dim traded = New history_t With {.YAKUJYOU_dt = _index(0),'約定日
+            Dim traded = New history_t With {.dt_YAKUJYOU = _index(0),'約定日
                                             .name = _index(1),'銘柄名
                                             .code = _index(2),'銘柄コード
                                             .market = _index(3),'
