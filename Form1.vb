@@ -2,7 +2,6 @@
 Imports System.IO
 Imports System.Environment
 Imports CsvHelper
-Imports System.IO.File
 
 Public Class Form1
 
@@ -57,20 +56,18 @@ Public Class Form1
         Dim header = map_header(fileName(0)) 'SBI取引履歴の情報抽出
         Dim history = map_history(fileName(0), 10) '10行目から
         Dim patch_record = map_history(Path.Combine(CurrentDirectory, "patch.csv"), 2) '2行目から
-
         do_patch(history, patch_record) 'パッチデータを適用
         Dim all_history = calculate(orderByDate(history)) '日付順に出力
 
         '分割で自動出力できなかったものを出力
         Dim pre_illegal = all_history.Where(Function(r) (0 <= r.TORIHIKI.IndexOf("信用返済") AndAlso r.money_enter_ct = 0) OrElse (0 <= r.TORIHIKI.IndexOf("現物売") AndAlso 0 < r.remainVolume))
-        Dim illegal = all_history.Where(Function(r) pre_illegal.Any(Function(i) i.code = r.code AndAlso r.exted_vol = 0)).ToList
-
+        Dim illegal = all_history.Where(Function(r) pre_illegal.Any(Function(i) i.code = r.code AndAlso (0 < r.remainVolume OrElse 0 = r.exted_vol))).ToList
         writeCsv(Path.Combine(CurrentDirectory, "Debug.csv"), swap_history_to_patch(orderByCode(all_history)))
         writeCsv(Path.Combine(CurrentDirectory, "Result.csv"), swap_history_to_MEISAI(all_history))
         writeCsv(Path.Combine(CurrentDirectory, "Illegal.csv"), swap_history_to_patch(illegal))
-
-
     End Sub 'ファイルをドラッグ＆ドロップする処理
+#End Region
+
     Private Sub do_patch(ByRef s As List(Of history_t), _patch As List(Of history_t))
         For i As Integer = s.Count = 1 To 0 Step -1
             For Each p In _patch
@@ -78,12 +75,11 @@ Public Class Form1
                     s.RemoveAt(i)
                 End If
             Next
-        Next
+        Next 'パッチに置き換えられるデータの消去
         For Each p In _patch
             s.Add(p)
-        Next
+        Next 'パッチデータを追加
     End Sub
-
     Private Function swap_history_to_MEISAI(exits As List(Of history_t)) As List(Of SONEKI_MEISAI_t)
         Dim trades = New List(Of SONEKI_MEISAI_t)
         For Each e In exits
@@ -129,7 +125,6 @@ Public Class Form1
         Next
         Return patchs
     End Function
-
     Private Function calculate(_source As List(Of history_t)) As List(Of history_t)
         Dim retList = New List(Of history_t)
         For Each t In _source
@@ -267,9 +262,6 @@ Public Class Form1
     Private Sub matching_SHINYO_entry_exit(ByRef entres As List(Of history_t), ByRef ret As history_t)
         Dim vector = If(0 <= ret.TORIHIKI.IndexOf("信用返済買"), 1, -1)
         For Each e In entres 'エントリー抽出リスト
-            If e.code = "3475" Then
-                Dim a = 0
-            End If
             Dim entry_price = (ret.c_money_shinyo + (ret.c_cost + ret.SONEKI) * vector) / ret.volume '売り買い逆
             If e.remainVolume < ret.volume Then Continue For '手仕舞い株数より仕掛け株数が少ないときだけ進む
             If e.TANKA_sr = entry_price Then 'エントリーからの仕掛け値と手仕舞いから計算した仕掛け値が一致
@@ -299,19 +291,19 @@ Public Class Form1
     Private Function GENBUTSU_entry(_t As history_t, _source As List(Of history_t)) As List(Of history_t)
         Dim entres = _source.Where(Function(s) (s.code = _t.code OrElse s.code = _t.code & "1") AndAlso s.IsGenbutsuEntry AndAlso Date.Compare(s.dt_YAKUJYOU, _t.dt_YAKUJYOU) <= 0).ToList
         Return entres
-    End Function '現売以前の現物仕掛けを抽出
+    End Function '現売以前の現物仕掛け群
     Private Function SHINYO_sell_entry(_ret As history_t, _retList As List(Of history_t)) As List(Of history_t)
         Dim entres = _retList.Where(Function(r) r.code = _ret.code AndAlso r.IsMeaginSellEntry AndAlso Date.Compare(r.dt_YAKUJYOU, _ret.dt_YAKUJYOU) <= 0).ToList
         Return entres
-    End Function '返済以前の信用新規売を抽出
+    End Function '返済以前の信用新規売群
     Private Function SHINYO_buy_entry(_t As history_t, _source As List(Of history_t)) As List(Of history_t)
         Dim entres = _source.Where(Function(s) s.code = _t.code AndAlso s.IsMeaginBuyEntry AndAlso Date.Compare(s.dt_YAKUJYOU, _t.dt_YAKUJYOU) <= 0).ToList
         Return entres
-    End Function '返済以前の信用新規買を抽出
+    End Function '返済以前の信用新規買群
     Private Function SHINYO_sell_exit(_t As history_t, _source As List(Of history_t)) As List(Of history_t)
         Dim exits = _source.Where(Function(s) s.code = _t.code AndAlso s.IsMeaginSellExit AndAlso Date.Compare(s.dt_YAKUJYOU, _t.dt_YAKUJYOU) <= 0).ToList
         Return exits
-    End Function
+    End Function '以前の信用返済売群
     Private Function copyHistory(_history As history_t) As history_t
         Dim filter = Function(_str As String) As String
                          Return If(_str = "--", "0", _str)
@@ -333,64 +325,72 @@ Public Class Form1
         _copy.volume = filter(_history.volume)
         Return _copy
     End Function
-#End Region
+    Private Function readEnd_csv(_fname As String) As String()
+        Dim all_line As String() = {}
+        Dim openFlag = False
+        Do
+            Try
+                Using sr = New StreamReader(_fname, Encoding.GetEncoding("shift_jis"))
+                    all_line = sr.ReadToEnd.Split(vbCrLf)
+                End Using
+                openFlag = True
+            Catch ex As Exception
+                MsgBox("ファイルを開けません。" & vbCrLf & "他で開いている場合は閉じてOKボタン。" & vbCrLf)
+            End Try
+        Loop Until openFlag = True
+        Return all_line
+    End Function
     Private Function map_history(_fname As String, _startLine As Integer) As List(Of history_t)
-        Dim result = read_from_csv(_fname, _startLine)
-        Dim csv = result.Split(vbCrLf)
+        Dim all_line = readEnd_csv(_fname)
         Dim lines As New List(Of history_t)
-        Dim _buffer As String = ""
-        For i As Integer = 0 To csv.Count - 1
-            _buffer = csv(i).Replace(vbLf, "")
-            Dim _index() = _buffer.Split(",")
-            If _buffer = "" Then Continue For
-            Dim traded = New history_t With {.dt_YAKUJYOU = _index(0),'約定日
-                                            .name = _index(1),'銘柄名
-                                            .code = _index(2),'銘柄コード
-                                            .market = _index(3),'
-                                            .TORIHIKI = _index(4),
-                                            .KIGEN = _index(5),
-                                            .AZUKARI = _index(6),
-                                            .KAZEI = _index(7),
-                                            .volume = _index(8),
-                                            .TANKA_sr = _index(9),
-                                            .cost_sr = _index(10),
-                                            .tax_sr = _index(11),
-                                            .UKEWATASHIBI = _index(12),
-                                            .money_sr = _index(13),'受渡金額
-                                            .exted_vol = 0}
-            lines.Add(traded)
+        Dim is_online As Boolean = False
+        For Each line In all_line
+            If line = vbLf Then Continue For '最終行
+            If is_online Then
+                Dim _index() = line.Replace(vbLf, "").Split(",")
+                Dim traded = New history_t With {.dt_YAKUJYOU = _index(0),'約定日
+                                                    .name = _index(1),'銘柄名
+                                                    .code = _index(2),'銘柄コード
+                                                    .market = _index(3),'
+                                                    .TORIHIKI = _index(4),
+                                                    .KIGEN = _index(5),
+                                                    .AZUKARI = _index(6),
+                                                    .KAZEI = _index(7),
+                                                    .volume = _index(8),
+                                                    .TANKA_sr = _index(9),
+                                                    .cost_sr = _index(10),
+                                                    .tax_sr = _index(11),
+                                                    .UKEWATASHIBI = _index(12),
+                                                    .money_sr = _index(13),'受渡金額
+                                                    .exted_vol = 0}
+                lines.Add(traded)
+            End If
+            If 0 <= line.IndexOf("約定日") Then is_online = True '次の行から読み込む
         Next
         Return lines
     End Function
     Private Function map_header(_fname As String) As header_t
-        Dim _head = read_from_csv(_fname, 5, 5).Split(",") 'ヘッダー行
-        Dim _headed = _head.Select(Function(h) h.Replace(vbCrLf, "")) 'フィルタリング
-        Dim _header As New header_t
-        Try
-            _header = New header_t With {.SYOUHIN_SHITEI = _headed(0),
+        Dim all_line = readEnd_csv(_fname)
+        Dim _headed As String() = {}
+        Dim _header = New header_t
+        For Each line In all_line
+            If 0 <= line.IndexOf("すべての商品") Then
+                _headed = line.Replace(vbLf, "").Split(",") 'フィルタリング
+                Try
+                    _header = New header_t With {.SYOUHIN_SHITEI = _headed(0),
                                          .KAISHI_DATE = CDate(_headed(1)).ToShortDateString,
                                          .SYURYOU_DATE = CDate(_headed(2)).ToShortDateString,
                                          .MEISAI_SUU = _headed(3),
                                          .MEISAI_KAISSHI = _headed(4),
                                          .MEISAI_SYURYOU = _headed(5)}
 
-        Catch ex As Exception
-            textLog.AppendText($"このファイルはSBI取引履歴ではありません" & vbCrLf & vbCrLf)
-        End Try
+                Catch ex As Exception
+                    textLog.AppendText($"このファイルはSBI取引履歴ではありません" & vbCrLf & vbCrLf)
+                End Try
+                Exit For
+            End If
+        Next
         Return _header
-    End Function
-    Private Function read_from_csv(_fname As String, _startLine As Integer, Optional _endLine As Integer = 0) As String
-        Using sr = New StreamReader(_fname, Encoding.GetEncoding("shift_jis"))
-            Dim _result As String = ""
-            Dim _buffer As String = ""
-            Dim i As Integer = 0
-            While 0 <= sr.Peek()
-                i += 1
-                _buffer = sr.ReadLine().Replace("""", "")
-                If (_startLine <= i AndAlso i <= _endLine) Or (_startLine <= i AndAlso _endLine = 0) Then _result += _buffer + NewLine
-            End While
-            Return _result
-        End Using
     End Function
     Private Sub writeCsv(Of T)(_fname As String, _source As List(Of T))
         Dim flag As Boolean = False
