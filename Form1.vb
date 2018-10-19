@@ -201,6 +201,7 @@ Public Class Form1
                                 ret.dt_enter = ret.dt_YAKUJYOU
                                 ret.money_exit_ct = ret.money_sr
                                 ret.SONEKI = ret.money_sr
+                                ret.exted_vol = ret.volume
                             End If
                         Case entres.Count = 1 '仕掛けが単独
                             Dim e = entres(0)
