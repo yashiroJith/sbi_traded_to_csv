@@ -20,7 +20,7 @@ Public Class history_t
     Public Property money_exit As Integer = 0
     Public Property money_exit_ct As Integer = 0
     Public Property SONEKI As Integer = 0
-    Public Property exted_vol As Integer = 0
+    Public Property exited_vol As Integer = 0
     Public Property dt_enter As String = ""
     Public Property cost_enter As Integer = 0
     Public Property cost_exit As Integer = 0
@@ -49,7 +49,7 @@ Public Class history_t
         End Select
     End Function
     Public Function remainVolume() As Integer
-        Return volume - exted_vol
+        Return volume - exited_vol
     End Function 'ˆ—‘Ò‚¿‚Ìc‚èŠ””
     Public Function Is_entry() As Boolean
         Return If(orderBytype() <= 4, True, False)
